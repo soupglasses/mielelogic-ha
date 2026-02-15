@@ -54,7 +54,8 @@ class MieleLogic(BaseModel):
         )
 
     def __del__(self):
-        self._client.close()
+        if self._client:
+            self._client.close()
 
     def laundry_states(self, laundry_number: int) -> LaundryStatesResponseDTO:
         url = f"{self.URL_BASE}/Country/{self.scope}/Laundry/{laundry_number}/laundrystates?language=en"
