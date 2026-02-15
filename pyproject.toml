@@ -1,7 +1,7 @@
 [project]
 name = "mielelogic-ha"
 dynamic = ["version"]
-license = "LGPL-2.1-only"
+license = "EUPL-1.2"
 description = "MieleLogic Home Assistant Integration"
 readme = "README.md"
 authors = [
