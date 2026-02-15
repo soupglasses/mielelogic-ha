@@ -1,8 +1,31 @@
 from mielelogic_ha import MieleLogic
 
 import pytest
+from polyfactory.pytest_plugin import register_fixture
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import SecretStr, ValidationError
+
+from tests.factories import (
+    LaundrySettingsDTOFactory,
+    CardDTOFactory,
+    LaundryDTOFactory,
+    DetailsResponseDTOFactory,
+    MachineStateDTOFactory,
+    LaundryStatesResponseDTOFactory,
+    VersionResponseDTOFactory,
+    TransactionDTOFactory,
+    TransactionResponseDTOFactory,
+)
+
+register_fixture(LaundrySettingsDTOFactory)
+register_fixture(CardDTOFactory)
+register_fixture(LaundryDTOFactory)
+register_fixture(DetailsResponseDTOFactory)
+register_fixture(MachineStateDTOFactory)
+register_fixture(LaundryStatesResponseDTOFactory)
+register_fixture(VersionResponseDTOFactory)
+register_fixture(TransactionDTOFactory)
+register_fixture(TransactionResponseDTOFactory)
 
 
 class TestSecretSettings(BaseSettings):

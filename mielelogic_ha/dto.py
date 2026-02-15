@@ -31,7 +31,7 @@ class LaundrySettingsDTO(BaseModel):
     """Laundry settings from /Details endpoint."""
 
     phone_number: str = Field(validation_alias="PhoneNumber", examples=["12345678"])
-    language: str = Field(validation_alias="LaundryLanguage", examples=["da"])
+    laundry_language: str = Field(validation_alias="LaundryLanguage", examples=["da"])
     sms_mode_machine_enabled: bool = Field(
         validation_alias="LaundrySmsModeMachineEnabled"
     )
@@ -103,8 +103,8 @@ class CardDTO(BaseModel):
 class LaundryDTO(BaseModel):
     """Laundry facility information from /Details endpoint."""
 
-    number: int = Field(
-        validation_alias="LaundryNumber", ge=0
+    laundry_number: int = Field(
+        validation_alias="LaundryNumber", ge=0, le=9999
     )  # sent as str, treat as int.
     name: str = Field(validation_alias="Name", examples=["Nomen Nescio"])
     address: str = Field(
@@ -116,14 +116,14 @@ class LaundryDTO(BaseModel):
 
     def __lt__(self, other):
         if isinstance(other, self.__class__):
-            return self.number < other.number
+            return self.laundry_number < other.laundry_number
         return NotImplemented
 
 
 class DetailsResponseDTO(BaseModel):
     """Response from /Details endpoint."""
 
-    result_ok: bool = Field(validation_alias="ResultOK")
+    result_ok: bool = Field(validation_alias="ResultOK", examples=[True])
     result_text: str = Field(validation_alias="ResultText", examples=[""])
 
     apartment_number: str = Field(validation_alias="ApartmentNumber", examples=["0001"])
@@ -145,27 +145,27 @@ class DetailsResponseDTO(BaseModel):
 class MachineStateDTO(BaseModel):
     """Machine state information from /laundrystates endpoint."""
 
-    laundry_number: int = Field(validation_alias="LaundryNumber", ge=0)
+    laundry_number: int = Field(validation_alias="LaundryNumber", ge=0, le=9999)
     group_number: int = Field(
         validation_alias="GroupNumber",
         ge=0,
         description="Grouping of machines, may be used to signify different rooms or different kinds of machines",
         examples=[0, 1],
     )
-    number: int = Field(validation_alias="MachineNumber", ge=0)
+    machine_number: int = Field(validation_alias="MachineNumber", ge=0)
     unit_name: str = Field(
         validation_alias="UnitName",
         description="Friendly name for machine",
         examples=["Vask 1", "Tumbler 1"],
     )
-    symbol: int = Field(
+    machine_symbol: int = Field(
         validation_alias="MachineSymbol",
         ge=0,
         le=7,
         repr=False,
         description="User interface symbol to signify the kind of machine, hardcoded meaning for all supported machine types. see kind property",
     )
-    color: int = Field(
+    machine_color: int = Field(
         validation_alias="MachineColor",
         ge=0,
         le=3,
@@ -174,24 +174,24 @@ class MachineStateDTO(BaseModel):
     )
     text1: str = Field(validation_alias="Text1", examples=["Idle", "Time Left"])
     text2: str = Field(validation_alias="Text2", examples=["", "28 mins", "70 mins"])
-    type: str = Field(validation_alias="MachineType", examples=["58", "59"])
+    machine_type: str = Field(validation_alias="MachineType", examples=["58", "59"])
 
     @computed_field
     @property
-    def status(self) -> MachineStatus:
-        return MachineStatus(self.color)
+    def machine_status(self) -> MachineStatus:
+        return MachineStatus(self.machine_color)
 
     @computed_field
     @property
-    def kind(self) -> MachineKind:
-        return MachineKind(self.symbol)
+    def machine_kind(self) -> MachineKind:
+        return MachineKind(self.machine_symbol)
 
     def __lt__(self, other):
         if isinstance(other, self.__class__):
-            return (self.laundry_number, self.group_number, self.number) < (
+            return (self.laundry_number, self.group_number, self.machine_number) < (
                 other.laundry_number,
                 other.group_number,
-                other.number,
+                other.machine_number,
             )
         return NotImplemented
 
@@ -199,7 +199,7 @@ class MachineStateDTO(BaseModel):
 class LaundryStatesResponseDTO(BaseModel):
     """Response from /laundrystates endpoint."""
 
-    result_ok: bool = Field(validation_alias="ResultOK")
+    result_ok: bool = Field(validation_alias="ResultOK", examples=[True])
     result_text: str = Field(
         validation_alias="ResultText", examples=["", "Push"]
     )  # infrequently is set to "Push", behaviour erratic.
@@ -218,7 +218,7 @@ class LaundryStatesResponseDTO(BaseModel):
 class VersionResponseDTO(BaseModel):
     """Response from /Version endpoint."""
 
-    result_ok: bool = Field(validation_alias="ResultOK")
+    result_ok: bool = Field(validation_alias="ResultOK", examples=[True])
     result_text: Optional[str] = Field(validation_alias="ResultText", examples=[""])
 
     major: int = Field(validation_alias="Major")
@@ -237,7 +237,7 @@ class VersionResponseDTO(BaseModel):
 
 class TransactionDTO(BaseModel):
     laundry_number: int = Field(
-        validation_alias="SerialNumber"
+        validation_alias="SerialNumber", ge=0, le=9999
     )  # sent as str, treat as int.
     laundry_address: str = Field(
         validation_alias="LaundryAddress", examples=["H.C. Andersens Boulevard 34"]
@@ -269,7 +269,7 @@ class TransactionDTO(BaseModel):
 class TransactionResponseDTO(BaseModel):
     """Response from /transactions endpoint."""
 
-    result_ok: bool = Field(validation_alias="ResultOK")
+    result_ok: bool = Field(validation_alias="ResultOK", examples=[True])
     result_text: str = Field(validation_alias="ResultText", examples=[""])
 
     transactions: list[TransactionDTO] = Field(validation_alias="Transactions")

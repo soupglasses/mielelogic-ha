@@ -13,7 +13,7 @@ def test_external_api_endpoint_details(mielelogic: MieleLogic):
 def test_parse_endpoint_laundry_states(mielelogic: MieleLogic):
     details = mielelogic.details()
     laundry_states = [
-        mielelogic.laundry_states(laundry.number)
+        mielelogic.laundry_states(laundry.laundry_number)
         for laundry in details.accessible_laundries
     ]
 

@@ -115,7 +115,7 @@ def test() -> tuple[
 
     details = mielelogic.details()
     laundry_states = [
-        mielelogic.laundry_states(laundry.number)
+        mielelogic.laundry_states(laundry.laundry_number)
         for laundry in details.accessible_laundries
     ]
     transactions = mielelogic.transactions(
