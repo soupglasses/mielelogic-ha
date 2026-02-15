@@ -1,0 +1,47 @@
+[project]
+name = "mielelogic-ha"
+dynamic = ["version"]
+license = "LGPL-2.1-only"
+description = "MieleLogic Home Assistant Integration"
+readme = "README.md"
+authors = [
+    { name = "Sofie", email = "sofie+git@mailbox.org" }
+]
+requires-python = ">=3.13"
+dependencies = [
+    "httpx>=0.28.1",
+    "httpx-auth>=0.23.1",
+    "pydantic>=2.11.9",
+]
+
+[project.scripts]
+mielelogic-ha = "mielelogic_ha:main"
+
+[build-system]
+requires = ["hatchling", "uv-dynamic-versioning"]
+build-backend = "hatchling.build"
+
+[tool.hatch.version]
+source = "uv-dynamic-versioning"
+
+[tool.uv-dynamic-versioning]
+fallback-version = "0.0.0"
+
+[dependency-groups]
+dev = [
+    "ipython>=9.5.0",
+    "poethepoet>=0.37.0",
+    "pre-commit>=4.3.0",
+    "pydantic-settings>=2.13.0",
+    "pytest>=8.4.2",
+    "pytest-httpx>=0.35.0",
+    "ruff>=0.13.0",
+]
+
+[tool.poe.tasks]
+console = "ipython -i -c 'from mielelogic_ha import *'"
+test = "pytest tests/"
+lint = "ruff check ."
+format = "ruff format ."
+build = "uv build"
+setup = { shell = "uv sync && pre-commit install" }
