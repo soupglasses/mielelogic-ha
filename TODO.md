@@ -1,0 +1,1 @@
+- Add branding to brand/icon for the custom_component.

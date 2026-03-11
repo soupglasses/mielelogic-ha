@@ -1,8 +1,47 @@
 import datetime as dt
+import logging
+import re
 from enum import Enum
 from functools import total_ordering
-from typing import Optional, Self
-from pydantic import BaseModel, Field, computed_field, model_validator, AliasChoices
+from typing import Any, Optional, Self
+
+from pydantic import AliasChoices, BaseModel, Field, computed_field, model_validator
+
+_LOGGER = logging.getLogger(__name__)
+
+
+class ApiDTO(BaseModel):
+    """Base model for DTOs that can be serialized back to API wire format."""
+
+    def to_api(self) -> dict[str, Any]:
+        """Return the DTO in API response/request shape without computed fields."""
+        return {
+            self._api_field_name(name): self._api_serialize(getattr(self, name))
+            for name in self.__class__.model_fields
+        }
+
+    @classmethod
+    def _api_field_name(cls, field_name: str) -> str:
+        field = cls.model_fields[field_name]
+        if field.serialization_alias is not None:
+            return field.serialization_alias
+        if isinstance(field.validation_alias, str):
+            return field.validation_alias
+        if isinstance(field.validation_alias, AliasChoices):
+            first_choice = field.validation_alias.choices[0]
+            if isinstance(first_choice, str):
+                return first_choice
+        return field_name
+
+    @classmethod
+    def _api_serialize(cls, value: Any) -> Any:
+        if isinstance(value, ApiDTO):
+            return value.to_api()
+        if isinstance(value, list):
+            return [cls._api_serialize(item) for item in value]
+        if isinstance(value, dict):
+            return {key: cls._api_serialize(item) for key, item in value.items()}
+        return value
 
 
 class MachineKind(int, Enum):
@@ -27,7 +66,25 @@ class MachineStatus(int, Enum):
     Disabled = 3
 
 
-class LaundrySettingsDTO(BaseModel):
+class MachineTextStatus(str, Enum):
+    """Status derived from text1/text2 fields — more granular than MachineStatus color.
+
+    The API sends text1/text2 pairs that carry richer state information than the
+    color field alone:
+
+    - Idle:     text1="Idle",      text2=" "        — machine is free
+    - Running:  text1="Time left", text2="28 min"   — running with countdown
+    - Reserved: text1="Reserved",  text2="20:08"    — reserved, shows end time
+    - Unknown:  anything else while machine_color is non-idle
+    """
+
+    Idle = "idle"
+    Running = "timed_run"
+    Reserved = "reserved"
+    Unknown = "unknown"
+
+
+class LaundrySettingsDTO(ApiDTO):
     """Laundry settings from /Details endpoint."""
 
     phone_number: str = Field(validation_alias="PhoneNumber", examples=["12345678"])
@@ -49,7 +106,7 @@ class LaundrySettingsDTO(BaseModel):
     )
 
 
-class CardDTO(BaseModel):
+class CardDTO(ApiDTO):
     """Card information from /Details endpoint."""
 
     card_issuer_number: int = Field(
@@ -69,9 +126,7 @@ class CardDTO(BaseModel):
     city: str = Field(validation_alias="City", examples=["København V"])
     zip_code: str = Field(validation_alias="ZipCode", examples=["1553"])
     account_balance: float = Field(
-        validation_alias=AliasChoices(
-            "AccountBalance", "AccountBallance"
-        ),  # API-side typo "Ballance"
+        validation_alias="AccountBallance",  # API-side typo "Ballance"
         examples=[
             0,
             -10.0,
@@ -100,7 +155,7 @@ class CardDTO(BaseModel):
 
 
 @total_ordering
-class LaundryDTO(BaseModel):
+class LaundryDTO(ApiDTO):
     """Laundry facility information from /Details endpoint."""
 
     laundry_number: int = Field(
@@ -120,7 +175,7 @@ class LaundryDTO(BaseModel):
         return NotImplemented
 
 
-class DetailsResponseDTO(BaseModel):
+class DetailsResponseDTO(ApiDTO):
     """Response from /Details endpoint."""
 
     result_ok: bool = Field(validation_alias="ResultOK", examples=[True])
@@ -142,7 +197,7 @@ class DetailsResponseDTO(BaseModel):
 
 
 @total_ordering
-class MachineStateDTO(BaseModel):
+class MachineStateDTO(ApiDTO):
     """Machine state information from /laundrystates endpoint."""
 
     laundry_number: int = Field(validation_alias="LaundryNumber", ge=0, le=9999)
@@ -172,8 +227,14 @@ class MachineStateDTO(BaseModel):
         repr=False,
         description="User interface color to signify the status of a machine, hardcoded meaning for all supported colors. see status property",
     )
-    text1: str = Field(validation_alias="Text1", examples=["Idle", "Time Left"])
-    text2: str = Field(validation_alias="Text2", examples=["", "28 mins", "70 mins"])
+    text1: str = Field(
+        validation_alias="Text1",
+        examples=["Idle", "Time left", "Reserved"],
+    )
+    text2: str = Field(
+        validation_alias="Text2",
+        examples=[" ", "28 min", "70 min", "20:08"],
+    )
     machine_type: str = Field(validation_alias="MachineType", examples=["58", "59"])
 
     @computed_field
@@ -186,6 +247,66 @@ class MachineStateDTO(BaseModel):
     def machine_kind(self) -> MachineKind:
         return MachineKind(self.machine_symbol)
 
+    @computed_field
+    @property
+    def machine_text_status(self) -> MachineTextStatus:
+        """Derive a fine-grained status from text1.
+
+        Falls back to Idle when machine_color is Idle regardless of text1,
+        and to Unknown for unrecognised text1 on a non-idle machine.
+        """
+        if self.machine_status == MachineStatus.Idle:
+            return MachineTextStatus.Idle
+        if self.text1 == "Time left":
+            return MachineTextStatus.Running
+        if self.text1 == "Reserved":
+            return MachineTextStatus.Reserved
+        return MachineTextStatus.Unknown
+
+    @computed_field
+    @property
+    def minutes_remaining(self) -> int | None:
+        """Minutes remaining parsed from text2 when text1 is 'Time left'.
+
+        Looks for the first integer in text2 (e.g. "28 min" → 28).
+        Returns None for all other states.
+        """
+        if self.machine_text_status != MachineTextStatus.Running:
+            return None
+        match = re.search(r"\d+", self.text2)
+        if match:
+            return int(match.group())
+        _LOGGER.warning(
+            "machine %s: could not parse minutes from text2=%r",
+            self.unit_name,
+            self.text2,
+        )
+        return None
+
+    @computed_field
+    @property
+    def reserved_until(self) -> dt.time | None:
+        """Reservation end time parsed from text2 when text1 is 'Reserved'.
+
+        Looks for an HH:MM pattern in text2 (e.g. "20:08").
+        Warns and returns None if the pattern is absent or the value is not a valid time.
+        """
+        if self.machine_text_status != MachineTextStatus.Reserved:
+            return None
+        # TODO: validate if 7:00 or 07:00 is correct.
+        match = re.search(r"(\d{1,2}):(\d{2})", self.text2)
+        if match:
+            try:
+                return dt.time(int(match.group(1)), int(match.group(2)))
+            except ValueError:
+                pass
+        _LOGGER.warning(
+            "machine %s: could not parse HH:MM time from text2=%r",
+            self.unit_name,
+            self.text2,
+        )
+        return None
+
     def __lt__(self, other):
         if isinstance(other, self.__class__):
             return (self.laundry_number, self.group_number, self.machine_number) < (
@@ -196,13 +317,13 @@ class MachineStateDTO(BaseModel):
         return NotImplemented
 
 
-class LaundryStatesResponseDTO(BaseModel):
+class LaundryStatesResponseDTO(ApiDTO):
     """Response from /laundrystates endpoint."""
 
     result_ok: bool = Field(validation_alias="ResultOK", examples=[True])
     result_text: str = Field(
-        validation_alias="ResultText", examples=["", "Push"]
-    )  # infrequently is set to "Push", behaviour erratic.
+        validation_alias="ResultText", examples=[""]
+    )  # If set to "Push", do not trust this payload and refetch after 1 second.
 
     machine_states: list[MachineStateDTO] = Field(validation_alias="MachineStates")
 
@@ -215,7 +336,7 @@ class LaundryStatesResponseDTO(BaseModel):
         return self
 
 
-class VersionResponseDTO(BaseModel):
+class VersionResponseDTO(ApiDTO):
     """Response from /Version endpoint."""
 
     result_ok: bool = Field(validation_alias="ResultOK", examples=[True])
@@ -235,7 +356,7 @@ class VersionResponseDTO(BaseModel):
         return self
 
 
-class TransactionDTO(BaseModel):
+class TransactionDTO(ApiDTO):
     laundry_number: int = Field(
         validation_alias="SerialNumber", ge=0, le=9999
     )  # sent as str, treat as int.
@@ -266,7 +387,7 @@ class TransactionDTO(BaseModel):
     )
 
 
-class TransactionResponseDTO(BaseModel):
+class TransactionResponseDTO(ApiDTO):
     """Response from /transactions endpoint."""
 
     result_ok: bool = Field(validation_alias="ResultOK", examples=[True])

@@ -4,7 +4,7 @@ from polyfactory import Use
 from polyfactory.decorators import post_generated
 from polyfactory.factories.pydantic_factory import ModelFactory
 
-from mielelogic_ha.dto import (
+from mielelogic_api.dto import (
     LaundrySettingsDTO,
     CardDTO,
     LaundryDTO,
@@ -60,6 +60,38 @@ class DetailsResponseDTOFactory(ModelFactory[DetailsResponseDTO]):
 class MachineStateDTOFactory(ModelFactory[MachineStateDTO]):
     __use_examples__ = True
     __by_name__ = True
+
+    @post_generated
+    @classmethod
+    def text1(
+        cls,
+        text1: Optional[str] = None,
+    ):
+        if text1 is not None:
+            return text1
+        return ModelFactory.__random__.choice(["Idle", "Time left", "Reserved"])
+
+    @post_generated
+    @classmethod
+    def text2(
+        cls,
+        text2: Optional[str] = None,
+        text1: Optional[str] = None,
+    ):
+        if text2 is not None:
+            return text2
+        match text1:
+            case "Idle":
+                return " "
+            case "Time left":
+                return f"{ModelFactory.__random__.randint(1, 120)} min"
+            case "Reserved":
+                return (
+                    f"{ModelFactory.__random__.randint(0, 23)}:"
+                    f"{ModelFactory.__random__.randint(0, 59):02d}"
+                )
+            case _:
+                return ""
 
     @post_generated
     @classmethod

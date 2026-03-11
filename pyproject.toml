@@ -1,21 +1,28 @@
 [project]
-name = "mielelogic-ha"
+name = "mielelogic-api"
 dynamic = ["version"]
-license = "EUPL-1.2"
-description = "MieleLogic Home Assistant Integration"
+description = "Async API client and CLI for MieleLogic laundry systems"
 readme = "README.md"
+license = "EUPL-1.2"
 authors = [
     { name = "Sofie", email = "sofie+git@mailbox.org" }
 ]
-requires-python = ">=3.13"
+requires-python = ">=3.13.2"
+keywords = ["mielelogic", "miele", "api", "home-assistant"]
 dependencies = [
     "httpx>=0.28.1",
-    "httpx-auth>=0.23.1",
     "pydantic>=2.11.9",
+    "pydantic-settings>=2.13.0",
+    "rich>=14.1.0",
 ]
 
+[project.urls]
+Homepage = "https://github.com/soupglasses/mielelogic-ha"
+Repository = "https://github.com/soupglasses/mielelogic-ha"
+Issues = "https://github.com/soupglasses/mielelogic-ha/issues"
+
 [project.scripts]
-mielelogic-ha = "mielelogic_ha:main"
+mielelogic-cli = "mielelogic_cli.app:main"
 
 [build-system]
 requires = ["hatchling", "uv-dynamic-versioning"]
@@ -24,25 +31,59 @@ build-backend = "hatchling.build"
 [tool.hatch.version]
 source = "uv-dynamic-versioning"
 
+[tool.hatch.build.targets.wheel]
+packages = ["mielelogic_api", "mielelogic_cli"]
+
 [tool.uv-dynamic-versioning]
-fallback-version = "0.0.0"
+fallback-version = "1.0.0"
+
+[tool.uv]
+default-groups = ["dev", "ha"]
 
 [dependency-groups]
-dev = [
-    "ipython>=9.5.0",
-    "poethepoet>=0.37.0",
+test = [
     "polyfactory>=3.2.0",
-    "pre-commit>=4.3.0",
     "pydantic-settings>=2.13.0",
     "pytest>=8.4.2",
+    "pytest-asyncio>=0.25.0",
     "pytest-httpx>=0.35.0",
+]
+ha = [
+    { include-group = "test" },
+    "homeassistant==2026.2.3",
+    "pytest-homeassistant-custom-component>=0.13.200",
+]
+dev = [
+    { include-group = "test" },
+    "ipython>=9.5.0",
+    "poethepoet>=0.37.0",
+    "pre-commit>=4.3.0",
+    "respx>=0.22.0",
     "ruff>=0.13.0",
 ]
 
 [tool.poe.tasks]
-console = "ipython -i -c 'from mielelogic_ha import *'"
-test = "pytest tests/"
+console = "ipython -i -c 'from mielelogic_api import *'"
+cli = "mielelogic-cli"
+test = "pytest tests/mielelogic_cli tests/mielelogic_api"
+test-network = "pytest tests/mielelogic_api -m network --network"
+test-ha = "pytest tests/custom_components/mielelogic"
+test-all = "pytest tests --network"
+test-ci = "pytest tests"
 lint = "ruff check ."
+lint-fix = "ruff check --fix ."
 format = "ruff format ."
+format-check = "ruff format . --check"
 build = "uv build"
-setup = { shell = "uv sync && pre-commit install" }
+setup = { sequence = ["sync", "install-pre-commit"] }
+sync = "uv sync"
+install-pre-commit = "pre-commit install"
+develop = "scripts/develop"
+
+[tool.pytest.ini_options]
+addopts = ["--strict-markers"]
+asyncio_mode = "auto"
+markers = [
+    "network: test requires explicit network access",
+]
+testpaths = ["tests"]

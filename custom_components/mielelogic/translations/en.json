@@ -1,0 +1,49 @@
+{
+    "config": {
+        "step": {
+            "user": {
+                "description": "Enter your MieleLogic account credentials.",
+                "data": {
+                    "username": "Username",
+                    "password": "Password",
+                    "scope": "Country"
+                }
+            }
+        },
+        "error": {
+            "auth": "Invalid credentials.",
+            "connection": "Unable to connect to MieleLogic.",
+            "unknown": "An unexpected error occurred."
+        },
+        "abort": {
+            "already_configured": "This account is already configured."
+        }
+    },
+    "entity": {
+        "sensor": {
+            "machine_status": {
+                "name": "Status",
+                "state": {
+                    "idle": "Idle",
+                    "busy": "Busy",
+                    "running": "Running",
+                    "reserved": "Reserved",
+                    "booked": "Booked",
+                    "closed": "Closed",
+                    "disabled": "Disabled"
+                }
+            },
+            "minutes_remaining": {
+                "name": "Time remaining"
+            },
+            "account_balance": {
+                "name": "Account balance"
+            }
+        },
+        "binary_sensor": {
+            "machine_mine": {
+                "name": "Mine"
+            }
+        }
+    }
+}

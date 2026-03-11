@@ -1,0 +1,15 @@
+"""Fixtures for Home Assistant integration tests."""
+
+from polyfactory.pytest_plugin import register_fixture
+
+from tests.support import factories as shared_factories
+
+register_fixture(shared_factories.LaundrySettingsDTOFactory)
+register_fixture(shared_factories.CardDTOFactory)
+register_fixture(shared_factories.LaundryDTOFactory)
+register_fixture(shared_factories.DetailsResponseDTOFactory)
+register_fixture(shared_factories.MachineStateDTOFactory)
+register_fixture(shared_factories.LaundryStatesResponseDTOFactory)
+register_fixture(shared_factories.VersionResponseDTOFactory)
+register_fixture(shared_factories.TransactionDTOFactory)
+register_fixture(shared_factories.TransactionResponseDTOFactory)

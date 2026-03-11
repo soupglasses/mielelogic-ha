@@ -1,0 +1,144 @@
+#!/usr/bin/env bash
+# Run Home Assistant with the MieleLogic integration for ad-hoc testing.
+#
+# Usage: ./scripts/develop [--once]
+#
+# Sets up a separate HA venv under .ha-dev-venv and a config directory at
+# .ha-dev-config.  The library is installed as a regular wheel (not editable)
+# so only mielelogic_api/ and mielelogic_cli/ land on sys.path — an editable
+# install would expose the project root and let HA discover the source
+# custom_components/ with its production PyPI pin.  Instead the integration is
+# copied into the config directory with requirements cleared so HA never tries
+# to resolve the unpublished package from PyPI.
+#
+# By default the script watches for file changes and restarts HA automatically.
+# Pass --once to run HA in the foreground without the watcher.
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+CONFIG_DIR="${PROJECT_DIR}/.ha-dev-config"
+HA_VENV_DIR="${PROJECT_DIR}/.ha-dev-venv"
+HASS_PID=
+
+WATCH_MODE=1
+if [ "${1:-}" = "--once" ]; then
+  WATCH_MODE=0
+  shift
+fi
+if [ "$#" -ne 0 ]; then
+  echo "Usage: $0 [--once]" >&2
+  exit 2
+fi
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+homeassistant_requirement() {
+  sed -n 's/^[[:space:]]*"\(homeassistant==[^"]*\)",$/\1/p' \
+    "$PROJECT_DIR/pyproject.toml" | head -n1
+}
+
+ensure_ha_venv() {
+  local requirement
+  requirement="$(homeassistant_requirement)"
+  if [ -z "$requirement" ]; then
+    echo "Unable to determine pinned Home Assistant version from pyproject.toml" >&2
+    exit 1
+  fi
+
+  if [ ! -x "$HA_VENV_DIR/bin/hass" ]; then
+    echo "Creating Home Assistant dev environment in $HA_VENV_DIR"
+    uv venv "$HA_VENV_DIR"
+  fi
+
+  uv pip install --python "$HA_VENV_DIR/bin/python" \
+    "$requirement" "$PROJECT_DIR"
+}
+
+sync_integration() {
+  local dest="${CONFIG_DIR}/custom_components/mielelogic"
+
+  mkdir -p "$CONFIG_DIR/custom_components"
+  rm -rf "$dest"
+  cp -a "$PROJECT_DIR/custom_components/mielelogic" "$dest"
+
+  # Clear requirements so HA does not try to pip-install the library from PyPI.
+  sed -i '/"requirements": \[/,/\],/c\    "requirements": [],' \
+    "$dest/manifest.json"
+}
+
+ensure_config() {
+  if [ ! -f "$CONFIG_DIR/configuration.yaml" ]; then
+    mkdir -p "$CONFIG_DIR"
+    cat >"$CONFIG_DIR/configuration.yaml" <<'EOF'
+default_config:
+
+logger:
+  default: info
+  logs:
+    custom_components.mielelogic: debug
+    mielelogic_api: debug
+EOF
+  fi
+}
+
+# ---------------------------------------------------------------------------
+# Start / stop
+# ---------------------------------------------------------------------------
+
+cleanup() {
+  if [ -n "${HASS_PID:-}" ] && kill -0 "$HASS_PID" 2>/dev/null; then
+    kill -TERM "$HASS_PID" 2>/dev/null || true
+    wait "$HASS_PID" || true
+  fi
+}
+
+start_hass() {
+  sync_integration
+  uv pip install --quiet --python "$HA_VENV_DIR/bin/python" "$PROJECT_DIR"
+  "$HA_VENV_DIR/bin/hass" -c "$CONFIG_DIR" &
+  HASS_PID=$!
+}
+
+wait_for_changes() {
+  inotifywait \
+    --quiet \
+    --recursive \
+    --event close_write,create,delete,move \
+    --exclude '(^|/)(\.git|\.ha-dev-config|\.ruff_cache|\.pytest_cache|__pycache__)(/|$)|\.py[co]$' \
+    "$PROJECT_DIR/custom_components/mielelogic" \
+    "$PROJECT_DIR/mielelogic_api"
+}
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+
+trap cleanup EXIT INT TERM
+
+ensure_config
+ensure_ha_venv
+
+echo "Starting Home Assistant with config in $CONFIG_DIR"
+echo "Access at http://localhost:8123"
+echo ""
+
+start_hass
+
+if [ "$WATCH_MODE" -eq 0 ]; then
+  wait "$HASS_PID"
+  exit $?
+fi
+
+echo "Watching for changes in custom_components/mielelogic and mielelogic_api"
+
+while true; do
+  wait_for_changes >/dev/null
+  echo "Change detected, restarting Home Assistant..."
+  cleanup
+  sleep 0.2
+  start_hass
+done

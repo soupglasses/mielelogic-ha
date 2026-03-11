@@ -201,6 +201,10 @@ cython_debug/
 #   you could uncomment the following to ignore the entire vscode folder
 # .vscode/
 
+# Home Assistant dev config
+.ha-dev-config/
+.ha-dev-venv/
+
 # Ruff stuff:
 .ruff_cache/
 
@@ -214,3 +218,6 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Snapshot directory
+snapshots/
