@@ -2,6 +2,8 @@
 set -euo pipefail
 
 # Release script for mielelogic-ha
+# Resumable — re-run the same command to continue from where it left off.
+#
 # Usage: ./scripts/release <version>
 # Example: ./scripts/release 1.2.0
 
@@ -14,6 +16,7 @@ fi
 VERSION="$1"
 TAG="v${VERSION}"
 ROOT="$(git rev-parse --show-toplevel)"
+MANIFEST="$ROOT/custom_components/mielelogic/manifest.json"
 
 # Validate version format
 if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
@@ -21,23 +24,25 @@ if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
     exit 1
 fi
 
-# Check for clean working tree
-if ! git diff --quiet || ! git diff --cached --quiet; then
-    echo "Error: Working tree is not clean. Commit or stash changes first."
-    exit 1
-fi
+update_version_files() {
+    local current_version
+    current_version=$(python3 -c "
+import json, pathlib
+m = json.loads(pathlib.Path('$MANIFEST').read_text())
+print(m.get('version', ''))
+")
 
-# Check tag doesn't already exist
-if git rev-parse "$TAG" >/dev/null 2>&1; then
-    echo "Error: Tag $TAG already exists."
-    exit 1
-fi
+    if [ "$current_version" = "$VERSION" ]; then
+        echo "Version files already at $VERSION, skipping updates."
+        return
+    fi
 
-echo "Releasing version $VERSION ($TAG)"
+    if ! git diff --quiet || ! git diff --cached --quiet; then
+        echo "Error: Working tree is not clean. Commit or stash changes first."
+        exit 1
+    fi
 
-# Update custom_components/mielelogic/manifest.json
-MANIFEST="$ROOT/custom_components/mielelogic/manifest.json"
-python3 -c "
+    python3 -c "
 import json, pathlib
 p = pathlib.Path('$MANIFEST')
 m = json.loads(p.read_text())
@@ -45,45 +50,101 @@ m['version'] = '$VERSION'
 m['requirements'] = ['mielelogic-api==$VERSION']
 p.write_text(json.dumps(m, indent=4) + '\n')
 "
-echo "Updated $MANIFEST"
+    echo "Updated $MANIFEST"
 
-# Update pyproject.toml fallback-version
-sed -i "s/^fallback-version = .*/fallback-version = \"$VERSION\"/" "$ROOT/pyproject.toml"
-echo "Updated pyproject.toml fallback-version"
+    sed -i "s/^fallback-version = .*/fallback-version = \"$VERSION\"/" "$ROOT/pyproject.toml"
+    echo "Updated pyproject.toml fallback-version"
 
-# Update mielelogic_api/_version.py fallback
-sed -i "s/__version__ = \".*\"/__version__ = \"$VERSION\"/" "$ROOT/mielelogic_api/_version.py"
-echo "Updated mielelogic_api/_version.py fallback"
+    sed -i "s/__version__ = \".*\"/__version__ = \"$VERSION\"/" "$ROOT/mielelogic_api/_version.py"
+    echo "Updated mielelogic_api/_version.py fallback"
+}
 
-# Commit, tag, push
-git add \
-    "$MANIFEST" \
-    "$ROOT/pyproject.toml" \
-    "$ROOT/mielelogic_api/_version.py"
+commit_release() {
+    local latest_msg
+    latest_msg=$(git log -1 --format=%s)
 
-git commit -m "release: $TAG"
-git tag -a "$TAG" -m "Release $TAG"
-
-echo ""
-echo "Created commit and tag $TAG."
-echo ""
-read -rp "Push commit and tag to origin? [y/N] " confirm
-if [[ "$confirm" =~ ^[Yy]$ ]]; then
-    git push origin HEAD "$TAG"
-    echo ""
-
-    # Create GitHub release
-    if command -v gh >/dev/null 2>&1; then
-        read -rp "Create GitHub release? [y/N] " create_release
-        if [[ "$create_release" =~ ^[Yy]$ ]]; then
-            gh release create "$TAG" --title "$TAG" --generate-notes
-            echo "GitHub release created."
-        fi
-    else
-        echo "Note: Install 'gh' CLI to create GitHub releases from the command line."
+    if [ "$latest_msg" = "release: $TAG" ]; then
+        echo "Release commit already exists, skipping commit."
+        return
     fi
-else
-    echo "Skipped push. To push manually:"
-    echo "  git push origin HEAD $TAG"
-    echo "  gh release create $TAG --title \"$TAG\" --generate-notes"
-fi
+
+    git add \
+        "$MANIFEST" \
+        "$ROOT/pyproject.toml" \
+        "$ROOT/mielelogic_api/_version.py"
+
+    git commit -m "release: $TAG"
+    echo "Created release commit."
+}
+
+create_tag() {
+    if git rev-parse "$TAG" >/dev/null 2>&1; then
+        local tag_commit head_commit
+        tag_commit=$(git rev-list -n 1 "$TAG")
+        head_commit=$(git rev-parse HEAD)
+
+        if [ "$tag_commit" != "$head_commit" ]; then
+            echo "Error: Tag $TAG exists but points to a different commit."
+            echo "  Tag:  $tag_commit"
+            echo "  HEAD: $head_commit"
+            exit 1
+        fi
+
+        echo "Tag $TAG already exists at HEAD, skipping."
+        return
+    fi
+
+    git tag -a "$TAG" -m "Release $TAG"
+    echo "Created tag $TAG."
+}
+
+push_to_remote() {
+    if git ls-remote --tags origin "$TAG" | grep -q "$TAG"; then
+        echo "Tag $TAG already pushed to origin, skipping push."
+        return
+    fi
+
+    echo ""
+    read -rp "Push commit and tag to origin? [y/N] " confirm
+    if [[ "$confirm" =~ ^[Yy]$ ]]; then
+        git push origin HEAD "$TAG"
+    else
+        echo "Skipped push. Re-run to continue."
+        exit 0
+    fi
+}
+
+create_github_release() {
+    if ! command -v gh >/dev/null 2>&1; then
+        echo ""
+        echo "Note: Install 'gh' CLI to create GitHub releases from the command line."
+        echo "  gh release create $TAG --title \"$TAG\" --generate-notes"
+        exit 0
+    fi
+
+    if gh release view "$TAG" >/dev/null 2>&1; then
+        echo "GitHub release $TAG already exists, skipping."
+        return
+    fi
+
+    echo ""
+    read -rp "Create GitHub release? [y/N] " create_release
+    if [[ "$create_release" =~ ^[Yy]$ ]]; then
+        gh release create "$TAG" --title "$TAG" --generate-notes
+        echo "GitHub release created."
+    else
+        echo "Skipped release. Re-run to continue."
+        exit 0
+    fi
+}
+
+echo "Releasing version $VERSION ($TAG)"
+
+update_version_files
+commit_release
+create_tag
+push_to_remote
+create_github_release
+
+echo ""
+echo "Release $TAG complete."
