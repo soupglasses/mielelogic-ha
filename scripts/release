@@ -1,0 +1,89 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Release script for mielelogic-ha
+# Usage: ./scripts/release <version>
+# Example: ./scripts/release 1.2.0
+
+if [ $# -ne 1 ]; then
+    echo "Usage: $0 <version>"
+    echo "Example: $0 1.2.0"
+    exit 1
+fi
+
+VERSION="$1"
+TAG="v${VERSION}"
+ROOT="$(git rev-parse --show-toplevel)"
+
+# Validate version format
+if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    echo "Error: Version must be in semver format (e.g. 1.2.0)"
+    exit 1
+fi
+
+# Check for clean working tree
+if ! git diff --quiet || ! git diff --cached --quiet; then
+    echo "Error: Working tree is not clean. Commit or stash changes first."
+    exit 1
+fi
+
+# Check tag doesn't already exist
+if git rev-parse "$TAG" >/dev/null 2>&1; then
+    echo "Error: Tag $TAG already exists."
+    exit 1
+fi
+
+echo "Releasing version $VERSION ($TAG)"
+
+# Update custom_components/mielelogic/manifest.json
+MANIFEST="$ROOT/custom_components/mielelogic/manifest.json"
+python3 -c "
+import json, pathlib
+p = pathlib.Path('$MANIFEST')
+m = json.loads(p.read_text())
+m['version'] = '$VERSION'
+m['requirements'] = ['mielelogic-api==$VERSION']
+p.write_text(json.dumps(m, indent=4) + '\n')
+"
+echo "Updated $MANIFEST"
+
+# Update pyproject.toml fallback-version
+sed -i "s/^fallback-version = .*/fallback-version = \"$VERSION\"/" "$ROOT/pyproject.toml"
+echo "Updated pyproject.toml fallback-version"
+
+# Update mielelogic_api/_version.py fallback
+sed -i "s/__version__ = \".*\"/__version__ = \"$VERSION\"/" "$ROOT/mielelogic_api/_version.py"
+echo "Updated mielelogic_api/_version.py fallback"
+
+# Commit, tag, push
+git add \
+    "$MANIFEST" \
+    "$ROOT/pyproject.toml" \
+    "$ROOT/mielelogic_api/_version.py"
+
+git commit -m "release: $TAG"
+git tag -a "$TAG" -m "Release $TAG"
+
+echo ""
+echo "Created commit and tag $TAG."
+echo ""
+read -rp "Push commit and tag to origin? [y/N] " confirm
+if [[ "$confirm" =~ ^[Yy]$ ]]; then
+    git push origin HEAD "$TAG"
+    echo ""
+
+    # Create GitHub release
+    if command -v gh >/dev/null 2>&1; then
+        read -rp "Create GitHub release? [y/N] " create_release
+        if [[ "$create_release" =~ ^[Yy]$ ]]; then
+            gh release create "$TAG" --title "$TAG" --generate-notes
+            echo "GitHub release created."
+        fi
+    else
+        echo "Note: Install 'gh' CLI to create GitHub releases from the command line."
+    fi
+else
+    echo "Skipped push. To push manually:"
+    echo "  git push origin HEAD $TAG"
+    echo "  gh release create $TAG --title \"$TAG\" --generate-notes"
+fi

@@ -90,4 +90,5 @@ def test_manifest_requires_published_mielelogic_api_package():
         Path("custom_components/mielelogic/manifest.json").read_text(encoding="utf-8")
     )
 
-    assert manifest["requirements"] == ["mielelogic-api==1.0.0"]
+    version = manifest["version"]
+    assert manifest["requirements"] == [f"mielelogic-api=={version}"]
