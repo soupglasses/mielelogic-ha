@@ -46,7 +46,7 @@ class TestMachineTextStatus:
         assert machine.machine_text_status == MachineTextStatus.Running
 
     def test_reserved(self):
-        machine = _machine(machine_color=2, text1="Reserved", text2="20:08")
+        machine = _machine(machine_color=2, text1="Reserved until", text2="20:08")
         assert machine.machine_text_status == MachineTextStatus.Reserved
 
     def test_unknown_busy(self):
@@ -78,7 +78,7 @@ class TestMinutesRemaining:
         assert machine.minutes_remaining is None
 
     def test_none_when_reserved(self):
-        machine = _machine(machine_color=2, text1="Reserved", text2="20:08")
+        machine = _machine(machine_color=2, text1="Reserved until", text2="20:08")
         assert machine.minutes_remaining is None
 
     def test_none_when_text2_empty(self, caplog):
@@ -91,18 +91,14 @@ class TestMinutesRemaining:
 
 
 class TestReservedUntil:
-    """Test reserved_until parsing from text2.
-
-    Reservation payload examples are not yet backed by live snapshots.
-    Keep these as speculative parser tests until real reservation data is captured.
-    """
+    """Test reserved_until parsing from text2."""
 
     def test_parses_time(self):
-        machine = _machine(machine_color=2, text1="Reserved", text2="20:08")
+        machine = _machine(machine_color=2, text1="Reserved until", text2="20:08")
         assert machine.reserved_until == dt.time(20, 8)
 
     def test_parses_time_embedded_in_text(self):
-        machine = _machine(machine_color=2, text1="Reserved", text2="Until 9:30")
+        machine = _machine(machine_color=2, text1="Reserved until", text2="Until 9:30")
         assert machine.reserved_until == dt.time(9, 30)
 
     def test_none_when_not_reserved(self):
@@ -115,7 +111,9 @@ class TestReservedUntil:
 
     def test_none_when_text2_missing(self, caplog):
         """Missing HH:MM in text2 should warn and return None."""
-        machine = _machine(machine_color=2, text1="Reserved", text2="no time here")
+        machine = _machine(
+            machine_color=2, text1="Reserved until", text2="no time here"
+        )
         with caplog.at_level("WARNING"):
             result = machine.reserved_until
         assert result is None

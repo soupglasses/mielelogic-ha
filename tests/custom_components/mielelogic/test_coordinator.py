@@ -42,12 +42,11 @@ def _busy(laundry_number: int, machine_number: int):
 
 
 def _reserved(laundry_number: int, machine_number: int):
-    # Reservation payload shape is not yet backed by live snapshots.
     return MachineStateDTOFactory.build(
         laundry_number=laundry_number,
         machine_number=machine_number,
         machine_color=2,  # MachineStatus.Busy
-        text1="Reserved",
+        text1="Reserved until",
         text2="20:08",
     )
 
@@ -159,10 +158,7 @@ class TestOurMachineDetection:
         assert key_b not in result
 
     def test_reservation_with_transaction_marks_ours(self, coordinator):
-        """Reserved machine should be 'ours' when a matching transaction is seen.
-
-        This reservation state is still based on an unverified payload shape.
-        """
+        """Reserved machine should be 'ours' when a matching transaction is seen."""
         now = dt.datetime(2026, 1, 1, 12, 0, 0)
         key = (1000, 1)
 
@@ -174,10 +170,7 @@ class TestOurMachineDetection:
         assert key in result
 
     def test_reservation_without_transaction_not_ours(self, coordinator):
-        """Reserved machine with no matching transaction is not ours.
-
-        This reservation state is still based on an unverified payload shape.
-        """
+        """Reserved machine with no matching transaction is not ours."""
         now = dt.datetime(2026, 1, 1, 12, 0, 0)
         key = (1000, 1)
 

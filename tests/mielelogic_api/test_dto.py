@@ -47,7 +47,7 @@ class TestDTOFactories:
                 assert machine.text2 == " "
             elif machine.text1 == "Time left":
                 assert re.fullmatch(r"\d+ min", machine.text2)
-            elif machine.text1 == "Reserved":
+            elif machine.text1 == "Reserved until":
                 assert re.fullmatch(r"\d{1,2}:\d{2}", machine.text2)
             else:
                 pytest.fail(f"Unexpected text1 generated: {machine.text1!r}")

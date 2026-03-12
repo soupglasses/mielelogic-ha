@@ -74,7 +74,7 @@ class MachineTextStatus(str, Enum):
 
     - Idle:     text1="Idle",      text2=" "        — machine is free
     - Running:  text1="Time left", text2="28 min"   — running with countdown
-    - Reserved: text1="Reserved",  text2="20:08"    — reserved, shows end time
+    - Reserved: text1="Reserved until",  text2="20:08"    — reserved, shows end time
     - Unknown:  anything else while machine_color is non-idle
     """
 
@@ -229,7 +229,7 @@ class MachineStateDTO(ApiDTO):
     )
     text1: str = Field(
         validation_alias="Text1",
-        examples=["Idle", "Time left", "Reserved"],
+        examples=["Idle", "Time left", "Reserved until"],
     )
     text2: str = Field(
         validation_alias="Text2",
@@ -259,7 +259,7 @@ class MachineStateDTO(ApiDTO):
             return MachineTextStatus.Idle
         if self.text1 == "Time left":
             return MachineTextStatus.Running
-        if self.text1 == "Reserved":
+        if self.text1 == "Reserved until":
             return MachineTextStatus.Reserved
         return MachineTextStatus.Unknown
 

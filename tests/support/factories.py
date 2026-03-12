@@ -69,7 +69,7 @@ class MachineStateDTOFactory(ModelFactory[MachineStateDTO]):
     ):
         if text1 is not None:
             return text1
-        return ModelFactory.__random__.choice(["Idle", "Time left", "Reserved"])
+        return ModelFactory.__random__.choice(["Idle", "Time left", "Reserved until"])
 
     @post_generated
     @classmethod
@@ -85,7 +85,7 @@ class MachineStateDTOFactory(ModelFactory[MachineStateDTO]):
                 return " "
             case "Time left":
                 return f"{ModelFactory.__random__.randint(1, 120)} min"
-            case "Reserved":
+            case "Reserved until":
                 return (
                     f"{ModelFactory.__random__.randint(0, 23)}:"
                     f"{ModelFactory.__random__.randint(0, 59):02d}"
