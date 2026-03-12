@@ -35,7 +35,7 @@ source = "uv-dynamic-versioning"
 packages = ["mielelogic_api", "mielelogic_cli"]
 
 [tool.uv-dynamic-versioning]
-fallback-version = "1.0.0"
+fallback-version = "1.0.1"
 
 [tool.uv]
 default-groups = ["dev", "ha"]

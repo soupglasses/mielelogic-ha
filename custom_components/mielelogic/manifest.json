@@ -1,14 +1,16 @@
 {
     "domain": "mielelogic",
     "name": "MieleLogic",
-    "codeowners": ["@soupglasses"],
+    "codeowners": [
+        "@soupglasses"
+    ],
     "config_flow": true,
     "documentation": "https://github.com/soupglasses/mielelogic-ha",
     "integration_type": "hub",
     "iot_class": "cloud_polling",
     "issue_tracker": "https://github.com/soupglasses/mielelogic-ha/issues",
     "requirements": [
-        "mielelogic-api==1.0.0"
+        "mielelogic-api==1.0.1"
     ],
-    "version": "1.0.0"
+    "version": "1.0.1"
 }
