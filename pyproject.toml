@@ -64,7 +64,7 @@ dev = [
 
 [tool.poe.tasks]
 console = "ipython -i -c 'from mielelogic_api import *'"
-cli = "mielelogic-cli"
+cli = "uv run mielelogic-cli"
 test = "pytest tests/mielelogic_cli tests/mielelogic_api"
 test-network = "pytest tests/mielelogic_api -m network --network"
 test-ha = "pytest tests/custom_components/mielelogic"
