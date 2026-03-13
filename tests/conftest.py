@@ -14,6 +14,12 @@ from tests.support.factories import (
     DetailsResponseDTOFactory,
     MachineStateDTOFactory,
     LaundryStatesResponseDTOFactory,
+    ReservationDTOFactory,
+    ReservationsResponseDTOFactory,
+    ReservationReceiptResponseDTOFactory,
+    TimeSlotDTOFactory,
+    MachineTimeTableDTOFactory,
+    TimetableResponseDTOFactory,
     VersionResponseDTOFactory,
     TransactionDTOFactory,
     TransactionResponseDTOFactory,
@@ -25,6 +31,12 @@ register_fixture(LaundryDTOFactory)
 register_fixture(DetailsResponseDTOFactory)
 register_fixture(MachineStateDTOFactory)
 register_fixture(LaundryStatesResponseDTOFactory)
+register_fixture(ReservationDTOFactory)
+register_fixture(ReservationsResponseDTOFactory)
+register_fixture(ReservationReceiptResponseDTOFactory)
+register_fixture(TimeSlotDTOFactory)
+register_fixture(MachineTimeTableDTOFactory)
+register_fixture(TimetableResponseDTOFactory)
 register_fixture(VersionResponseDTOFactory)
 register_fixture(TransactionDTOFactory)
 register_fixture(TransactionResponseDTOFactory)

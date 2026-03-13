@@ -8,7 +8,12 @@ from rich.columns import Columns
 from rich.console import Group
 
 from mielelogic_cli import app
-from mielelogic_cli.app import DashboardSnapshot, KeyboardController, render_dashboard
+from mielelogic_cli.app import (
+    DashboardSnapshot,
+    KeyboardController,
+    _resolve_machine,
+    render_dashboard,
+)
 from tests.support.factories import (
     DetailsResponseDTOFactory,
     LaundryDTOFactory,
@@ -39,6 +44,8 @@ def build_snapshot() -> DashboardSnapshot:
             200: [first_machine, second_machine],
             100: [],
         },
+        reservations={},
+        timetables={},
     )
 
 
@@ -56,7 +63,8 @@ def test_render_dashboard_preserves_api_order():
     first_columns = first_panel.renderable
     assert isinstance(first_columns, Columns)
     machine_titles = [panel.title for panel in first_columns.renderables]
-    assert machine_titles == ["Machine Nine #9", "Machine One #1"]
+    assert "Machine Nine #9" in str(machine_titles[0])
+    assert "Machine One #1" in str(machine_titles[1])
 
 
 @pytest.mark.parametrize("key", ["q", "\x1b", "\x03"])
@@ -80,6 +88,62 @@ def test_keyboard_controller_debounces_manual_refresh():
 
     controller.handle_key("r", now=15.1)
     assert controller._refresh_event.is_set() is True
+
+
+def test_keyboard_controller_number_keys_select_machine():
+    controller = KeyboardController()
+
+    controller.handle_key("3")
+    assert controller.selected_machine == 3
+
+    controller.handle_key("7")
+    assert controller.selected_machine == 7
+
+
+def test_keyboard_controller_book_key_sets_event():
+    controller = KeyboardController()
+    controller.selected_machine = 1
+
+    controller.handle_key("b")
+    assert controller._book_event.is_set()
+
+
+def test_keyboard_controller_unbook_key_sets_event():
+    controller = KeyboardController()
+    controller.selected_machine = 1
+
+    controller.handle_key("u")
+    assert controller._unbook_event.is_set()
+
+
+def test_keyboard_controller_book_ignored_without_selection():
+    controller = KeyboardController()
+
+    controller.handle_key("b")
+    assert not controller._book_event.is_set()
+
+
+def test_resolve_machine():
+    snapshot = build_snapshot()
+    result = _resolve_machine(snapshot, 1)
+    assert result is not None
+    laundry_number, machine = result
+    assert laundry_number == 200
+    assert machine.unit_name == "Machine Nine"
+
+    result2 = _resolve_machine(snapshot, 2)
+    assert result2 is not None
+    assert result2[1].unit_name == "Machine One"
+
+    assert _resolve_machine(snapshot, 99) is None
+
+
+def test_render_dashboard_with_selected_machine():
+    snapshot = build_snapshot()
+    layout = render_dashboard(
+        snapshot, refresh_remaining_seconds=30, selected_machine=1
+    )
+    assert layout is not None
 
 
 def test_main_swallows_keyboard_interrupt(monkeypatch: pytest.MonkeyPatch):

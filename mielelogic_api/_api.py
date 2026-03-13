@@ -32,6 +32,22 @@ class MieleLogicApiRoutes:
     def version(self) -> str:
         return f"{self.config.base_url}/Version"
 
+    @property
+    def reservations_base(self) -> str:
+        return f"{self.config.base_url}/reservations"
+
+    def reservations(self, laundry_number: int) -> str:
+        return f"{self.config.base_url}/reservations?laundry={laundry_number}"
+
+    def reservation_receipt(self, laundry_number: int) -> str:
+        return f"{self.config.base_url}/reservations/receipt?laundry={laundry_number}"
+
+    def timetable(self, laundry_number: int) -> str:
+        return (
+            f"{self.config.base_url}/country/{self.config.scope}"
+            f"/laundry/{laundry_number}/timetable"
+        )
+
     def laundry_states(self, laundry_number: int) -> str:
         return (
             f"{self.config.base_url}/Country/{self.config.scope}"

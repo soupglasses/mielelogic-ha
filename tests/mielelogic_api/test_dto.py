@@ -11,6 +11,9 @@ from tests.support.factories import (
     LaundryDTOFactory,
     LaundryStatesResponseDTOFactory,
     MachineStateDTOFactory,
+    ReservationsResponseDTOFactory,
+    ReservationReceiptResponseDTOFactory,
+    TimetableResponseDTOFactory,
     TransactionResponseDTOFactory,
     VersionResponseDTOFactory,
 )
@@ -56,6 +59,22 @@ class TestDTOFactories:
         version = VersionResponseDTOFactory.build()
         assert version.result_ok
 
+    def test_reservations_factory(self):
+        resp = ReservationsResponseDTOFactory.build()
+        assert resp.result_ok
+        assert len(resp.reservations) >= 1
+
+    def test_reservation_receipt_factory(self):
+        receipt = ReservationReceiptResponseDTOFactory.build()
+        assert receipt.result_ok
+
+    def test_timetable_factory(self):
+        tt = TimetableResponseDTOFactory.build()
+        assert tt.result_ok
+        assert len(tt.machine_time_tables) >= 1
+        for machine_tt in tt.machine_time_tables.values():
+            assert len(machine_tt.time_table) >= 1
+
     def test_transaction_factory(self):
         tx_resp = TransactionResponseDTOFactory.build()
         assert tx_resp.result_ok
@@ -90,6 +109,14 @@ class TestDTOValidation:
     def test_version_rejects_result_not_ok(self):
         with pytest.raises(ValueError, match="Invalid"):
             VersionResponseDTOFactory.build(result_ok=False, result_text="Error")
+
+    def test_reservations_rejects_result_not_ok(self):
+        with pytest.raises(ValueError, match="Invalid"):
+            ReservationsResponseDTOFactory.build(result_ok=False, result_text="Error")
+
+    def test_timetable_rejects_result_not_ok(self):
+        with pytest.raises(ValueError, match="Invalid"):
+            TimetableResponseDTOFactory.build(result_ok=False, result_text="Error")
 
     def test_transaction_rejects_result_not_ok(self):
         with pytest.raises(ValueError, match="Invalid"):

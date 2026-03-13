@@ -16,6 +16,9 @@ from ._version import __version__
 from .dto import (
     DetailsResponseDTO,
     LaundryStatesResponseDTO,
+    ReservationReceiptResponseDTO,
+    ReservationsResponseDTO,
+    TimetableResponseDTO,
     TransactionResponseDTO,
     VersionResponseDTO,
 )
@@ -28,6 +31,8 @@ _AUTH_STATUS_CODES = {401, 403}
 _COMPATIBLE_VERSION = (7, 60, 9007, 21793)
 _TOKEN_EXPIRY_MARGIN = 30  # seconds before expiry to refresh
 _PUSH_RETRY_DELAY = 1.0
+_RECEIPT_POLL_INTERVAL = 1.0
+_RECEIPT_POLL_TIMEOUT = 10.0
 
 LOGGER = logging.getLogger(__name__)
 
@@ -192,6 +197,81 @@ class MieleLogicClient:
             },
         )
         return TransactionResponseDTO(**data)
+
+    async def reservations(self, laundry_number: int) -> ReservationsResponseDTO:
+        """Get user's reservations for a laundry facility."""
+        data = await self._request_json(
+            "GET", self._routes.reservations(laundry_number)
+        )
+        return ReservationsResponseDTO(**data)
+
+    async def timetable(self, laundry_number: int) -> TimetableResponseDTO:
+        """Get machine timetables for a laundry facility."""
+        data = await self._request_json("GET", self._routes.timetable(laundry_number))
+        return TimetableResponseDTO(**data)
+
+    async def create_reservation(
+        self,
+        laundry_number: int,
+        machine_number: int,
+        start: dt.datetime,
+        end: dt.datetime,
+    ) -> ReservationReceiptResponseDTO:
+        """Create a reservation and poll until confirmed."""
+        await self._request_json(
+            "PUT",
+            self._routes.reservations_base,
+            json={
+                "MachineNumber": machine_number,
+                "LaundryNumber": str(laundry_number),
+                "Start": start.isoformat(),
+                "End": end.isoformat(),
+            },
+        )
+        return await self._poll_reservation_receipt(laundry_number)
+
+    async def delete_reservation(
+        self,
+        laundry_number: int,
+        machine_number: int,
+        start: dt.datetime,
+        end: dt.datetime,
+    ) -> ReservationReceiptResponseDTO:
+        """Delete a reservation and poll until confirmed."""
+        await self._request_json(
+            "DELETE",
+            self._routes.reservations_base,
+            params={
+                "MachineNumber": machine_number,
+                "LaundryNumber": laundry_number,
+                "Start": start.isoformat(),
+                "End": end.isoformat(),
+            },
+        )
+        return await self._poll_reservation_receipt(laundry_number)
+
+    async def _poll_reservation_receipt(
+        self,
+        laundry_number: int,
+        *,
+        timeout: float = _RECEIPT_POLL_TIMEOUT,
+        interval: float = _RECEIPT_POLL_INTERVAL,
+    ) -> ReservationReceiptResponseDTO:
+        """Poll receipt endpoint until ResultText leaves 'InQueue'."""
+        deadline = time.monotonic() + timeout
+        while True:
+            data = await self._request_json(
+                "GET", self._routes.reservation_receipt(laundry_number)
+            )
+            receipt = ReservationReceiptResponseDTO(**data)
+            if receipt.result_text != "InQueue":
+                return receipt
+            if time.monotonic() >= deadline:
+                raise MieleLogicConnectionError(
+                    f"Reservation receipt polling timed out after {timeout}s "
+                    f"(still InQueue)"
+                )
+            await asyncio.sleep(interval)
 
     async def version(self) -> VersionResponseDTO:
         """Get API version information."""

@@ -11,6 +11,12 @@ from mielelogic_api.dto import (
     DetailsResponseDTO,
     MachineStateDTO,
     LaundryStatesResponseDTO,
+    ReservationDTO,
+    ReservationsResponseDTO,
+    ReservationReceiptResponseDTO,
+    TimeSlotDTO,
+    MachineTimeTableDTO,
+    TimetableResponseDTO,
     VersionResponseDTO,
     TransactionDTO,
     TransactionResponseDTO,
@@ -132,6 +138,81 @@ class LaundryStatesResponseDTOFactory(ModelFactory[LaundryStatesResponseDTO]):
             )
             for i in range(len(machine_numbers))
         ]
+
+
+class ReservationDTOFactory(ModelFactory[ReservationDTO]):
+    __use_examples__ = True
+    __by_name__ = True
+
+    @post_generated
+    @classmethod
+    def machine_number(cls, machine_number: Optional[int] = None):
+        return (
+            ModelFactory.__random__.randint(1, 99)
+            if machine_number is None
+            else machine_number
+        )
+
+
+class ReservationsResponseDTOFactory(ModelFactory[ReservationsResponseDTO]):
+    __use_examples__ = True
+    __by_name__ = True
+
+    @post_generated
+    @classmethod
+    def reservations(
+        cls,
+        laundry_number: Optional[int] = None,
+        size: Optional[int] = None,
+    ):
+        size = cls.__random__.randint(1, 3) if size is None else size
+        laundry_number = (
+            cls.__random__.randint(1000, 9999)
+            if laundry_number is None
+            else laundry_number
+        )
+        return [
+            ReservationDTOFactory.build(laundry_number=laundry_number)
+            for _ in range(size)
+        ]
+
+
+class ReservationReceiptResponseDTOFactory(ModelFactory[ReservationReceiptResponseDTO]):
+    __use_examples__ = True
+    __by_name__ = True
+
+
+class TimeSlotDTOFactory(ModelFactory[TimeSlotDTO]):
+    __use_examples__ = True
+    __by_name__ = True
+
+
+class MachineTimeTableDTOFactory(ModelFactory[MachineTimeTableDTO]):
+    __use_examples__ = True
+    __by_name__ = True
+
+    @post_generated
+    @classmethod
+    def time_table(
+        cls,
+        size: Optional[int] = None,
+    ):
+        size = cls.__random__.randint(3, 5) if size is None else size
+        return [TimeSlotDTOFactory.build() for _ in range(size)]
+
+
+class TimetableResponseDTOFactory(ModelFactory[TimetableResponseDTO]):
+    __use_examples__ = True
+    __by_name__ = True
+
+    @post_generated
+    @classmethod
+    def machine_time_tables(
+        cls,
+        size: Optional[int] = None,
+    ):
+        size = cls.__random__.randint(1, 4) if size is None else size
+        return {str(i + 1): MachineTimeTableDTOFactory.build() for i in range(size)}
 
 
 class VersionResponseDTOFactory(ModelFactory[VersionResponseDTO]):

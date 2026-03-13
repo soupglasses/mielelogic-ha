@@ -41,6 +41,8 @@ class ApiDTO(BaseModel):
             return [cls._api_serialize(item) for item in value]
         if isinstance(value, dict):
             return {key: cls._api_serialize(item) for key, item in value.items()}
+        if isinstance(value, dt.datetime):
+            return value.isoformat()
         return value
 
 
@@ -346,6 +348,119 @@ class VersionResponseDTO(ApiDTO):
     minor: int = Field(validation_alias="Minor")
     build: int = Field(validation_alias="Build")
     revision: int = Field(validation_alias="Revision")
+
+    @model_validator(mode="after")
+    def validate_result_ok(self) -> Self:
+        if not self.result_ok:
+            raise ValueError(
+                f"Invalid {self.__class__.__name__}: {self.result_text!r}."
+            )
+        return self
+
+
+class TimeSlotStatus(str, Enum):
+    """Status of a timetable slot."""
+
+    Reserved = "Reserved"
+    Available = "Available"
+
+
+class ReservationDTO(ApiDTO):
+    """A single reservation entry from /reservations endpoint."""
+
+    laundry_number: int = Field(
+        validation_alias="LaundryNumber", ge=0, le=9999, examples=[1234]
+    )
+    machine_number: int = Field(validation_alias="MachineNumber", ge=0, examples=[1])
+    machine_name: str = Field(validation_alias="MachineName", examples=["Machine 1"])
+    specialuser: int = Field(validation_alias="Specialuser", examples=[0])
+    start: dt.datetime = Field(
+        validation_alias="Start", examples=["2025-01-01T10:00:00"]
+    )
+    end: dt.datetime = Field(validation_alias="End", examples=["2025-01-01T11:30:00"])
+
+
+class ReservationsResponseDTO(ApiDTO):
+    """Response from GET /reservations endpoint."""
+
+    result_ok: bool = Field(validation_alias="ResultOK", examples=[True])
+    result_text: str = Field(validation_alias="ResultText", examples=[""])
+
+    max_user_reservations: int = Field(
+        validation_alias="MaxUserReservations", ge=0, examples=[2]
+    )
+    reservations: list[ReservationDTO] = Field(validation_alias="Reservations")
+
+    @model_validator(mode="after")
+    def validate_result_ok(self) -> Self:
+        if not self.result_ok:
+            raise ValueError(
+                f"Invalid {self.__class__.__name__}: {self.result_text!r}."
+            )
+        return self
+
+
+class ReservationReceiptResponseDTO(ApiDTO):
+    """Response from GET /reservations/receipt endpoint.
+
+    Used for polling after create/delete: ResultText transitions
+    from "InQueue" to "Created". Both states have ResultOK=true.
+    """
+
+    result_ok: bool = Field(validation_alias="ResultOK", examples=[True])
+    result_text: str = Field(validation_alias="ResultText", examples=["Created"])
+
+    @model_validator(mode="after")
+    def validate_result_ok(self) -> Self:
+        if not self.result_ok:
+            raise ValueError(
+                f"Invalid {self.__class__.__name__}: {self.result_text!r}."
+            )
+        return self
+
+
+class TimeSlotDTO(ApiDTO):
+    """A single timetable slot."""
+
+    start: dt.datetime = Field(
+        validation_alias="Start", examples=["2025-01-01T10:00:00"]
+    )
+    end: dt.datetime = Field(validation_alias="End", examples=["2025-01-01T11:30:00"])
+    status: TimeSlotStatus = Field(validation_alias="Status", examples=["Available"])
+
+
+class MachineTimeTableDTO(ApiDTO):
+    """A machine's timetable from /timetable endpoint."""
+
+    machine_number: int = Field(validation_alias="MachineNumber", ge=0, examples=[1])
+    machine_name: str = Field(validation_alias="MachineName", examples=["Machine 1"])
+    period_start: dt.datetime = Field(
+        validation_alias="PeriodStart", examples=["2025-01-01T10:00:00"]
+    )
+    period_end: dt.datetime = Field(
+        validation_alias="PeriodEnd", examples=["2025-02-01T10:00:00"]
+    )
+    time_table: list[TimeSlotDTO] = Field(validation_alias="TimeTable")
+
+
+class TimetableResponseDTO(ApiDTO):
+    """Response from GET /country/{scope}/laundry/{id}/timetable endpoint."""
+
+    result_ok: bool = Field(validation_alias="ResultOK", examples=[True])
+    result_text: str = Field(validation_alias="ResultText", examples=["OK"])
+
+    laundry_number: int = Field(
+        validation_alias="LaundryNumber", ge=0, le=9999, examples=[1234]
+    )
+    laundry_name: str = Field(
+        validation_alias="LaundryName", examples=["Example Laundry"]
+    )
+    max_user_reservations: int = Field(
+        validation_alias="MaxUserReservations", ge=0, examples=[2]
+    )
+    machine_time_tables: dict[str, MachineTimeTableDTO] = Field(
+        validation_alias="MachineTimeTables"
+    )
 
     @model_validator(mode="after")
     def validate_result_ok(self) -> Self:
