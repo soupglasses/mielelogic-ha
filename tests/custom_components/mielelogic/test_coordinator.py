@@ -16,6 +16,8 @@ from tests.support.factories import (
     DetailsResponseDTOFactory,
     MachineStateDTOFactory,
     LaundryStatesResponseDTOFactory,
+    ReservationDTOFactory,
+    ReservationsResponseDTOFactory,
     TransactionDTOFactory,
     TransactionResponseDTOFactory,
 )
@@ -262,9 +264,294 @@ async def test_laundry_states_result_text_is_logged(coordinator, caplog):
     coordinator.client.transactions = AsyncMock(
         return_value=TransactionResponseDTOFactory.build(size=0)
     )
+    coordinator.client.reservations = AsyncMock(
+        return_value=ReservationsResponseDTOFactory.build(size=0)
+    )
 
     with caplog.at_level("DEBUG"):
         await coordinator._do_update()
 
     assert "Laundry 1000 states fetched: 1 machines, result_text='Push'" in caplog.text
     assert "Laundry 1001 states fetched: 1 machines, result_text=''" in caplog.text
+
+
+class TestReservationBasedOwnership:
+    """Test _check_reservations_for_booked logic in isolation."""
+
+    @pytest.mark.asyncio
+    async def test_booked_machine_becomes_reserved_via_endpoint(self, coordinator):
+        now = dt.datetime(2026, 1, 1, 12, 0, 0)
+        key = (1000, 1)
+
+        coordinator._detect_our_machines({key: _idle(1000, 1)}, [], now)
+
+        states = {key: _reserved(1000, 1)}
+        our = coordinator._detect_our_machines(
+            states, [], now + dt.timedelta(minutes=1)
+        )
+        assert key not in our
+
+        coordinator.client.reservations = AsyncMock(
+            return_value=ReservationsResponseDTOFactory.build(
+                size=1,
+                laundry_number=1000,
+                reservations=[
+                    ReservationDTOFactory.build(
+                        laundry_number=1000,
+                        machine_number=1,
+                        start=dt.datetime(2026, 1, 1, 11, 0, 0),
+                        end=dt.datetime(2026, 1, 1, 13, 0, 0),
+                    )
+                ],
+            )
+        )
+        result = await coordinator._check_reservations_for_booked(
+            states, our, now + dt.timedelta(minutes=1)
+        )
+        assert key in result
+        coordinator.client.reservations.assert_awaited_once_with(1000)
+
+    @pytest.mark.asyncio
+    async def test_booked_machine_stays_booked_when_no_matching_reservation(
+        self, coordinator
+    ):
+        now = dt.datetime(2026, 1, 1, 12, 0, 0)
+        key = (1000, 1)
+
+        coordinator._detect_our_machines({key: _idle(1000, 1)}, [], now)
+        states = {key: _reserved(1000, 1)}
+        our = coordinator._detect_our_machines(
+            states, [], now + dt.timedelta(minutes=1)
+        )
+
+        coordinator.client.reservations = AsyncMock(
+            return_value=ReservationsResponseDTOFactory.build(
+                size=0, laundry_number=1000, reservations=[]
+            )
+        )
+        result = await coordinator._check_reservations_for_booked(
+            states, our, now + dt.timedelta(minutes=1)
+        )
+        assert key not in result
+
+    @pytest.mark.asyncio
+    async def test_reservation_outside_current_timeslot_no_match(self, coordinator):
+        now = dt.datetime(2026, 1, 1, 12, 0, 0)
+        key = (1000, 1)
+
+        coordinator._detect_our_machines({key: _idle(1000, 1)}, [], now)
+        states = {key: _reserved(1000, 1)}
+        our = coordinator._detect_our_machines(
+            states, [], now + dt.timedelta(minutes=1)
+        )
+
+        coordinator.client.reservations = AsyncMock(
+            return_value=ReservationsResponseDTOFactory.build(
+                size=1,
+                laundry_number=1000,
+                reservations=[
+                    ReservationDTOFactory.build(
+                        laundry_number=1000,
+                        machine_number=1,
+                        start=dt.datetime(2026, 1, 1, 14, 0, 0),
+                        end=dt.datetime(2026, 1, 1, 15, 0, 0),
+                    )
+                ],
+            )
+        )
+        result = await coordinator._check_reservations_for_booked(
+            states, our, now + dt.timedelta(minutes=1)
+        )
+        assert key not in result
+
+    @pytest.mark.asyncio
+    async def test_check_fires_only_once_per_reserved_appearance(self, coordinator):
+        now = dt.datetime(2026, 1, 1, 12, 0, 0)
+        key = (1000, 1)
+
+        coordinator._detect_our_machines({key: _idle(1000, 1)}, [], now)
+        states = {key: _reserved(1000, 1)}
+        our = coordinator._detect_our_machines(
+            states, [], now + dt.timedelta(minutes=1)
+        )
+
+        coordinator.client.reservations = AsyncMock(
+            return_value=ReservationsResponseDTOFactory.build(
+                size=0, laundry_number=1000, reservations=[]
+            )
+        )
+        await coordinator._check_reservations_for_booked(
+            states, our, now + dt.timedelta(minutes=1)
+        )
+        assert coordinator.client.reservations.await_count == 1
+
+        our2 = coordinator._detect_our_machines(
+            states, [], now + dt.timedelta(minutes=2)
+        )
+        await coordinator._check_reservations_for_booked(
+            states, our2, now + dt.timedelta(minutes=2)
+        )
+        assert coordinator.client.reservations.await_count == 1
+
+    @pytest.mark.asyncio
+    async def test_check_resets_after_machine_returns_to_idle(self, coordinator):
+        now = dt.datetime(2026, 1, 1, 12, 0, 0)
+        key = (1000, 1)
+
+        coordinator._detect_our_machines({key: _idle(1000, 1)}, [], now)
+        states = {key: _reserved(1000, 1)}
+        our = coordinator._detect_our_machines(
+            states, [], now + dt.timedelta(minutes=1)
+        )
+
+        coordinator.client.reservations = AsyncMock(
+            return_value=ReservationsResponseDTOFactory.build(
+                size=0, laundry_number=1000, reservations=[]
+            )
+        )
+        await coordinator._check_reservations_for_booked(
+            states, our, now + dt.timedelta(minutes=1)
+        )
+        assert coordinator.client.reservations.await_count == 1
+
+        idle_states = {key: _idle(1000, 1)}
+        coordinator._detect_our_machines(
+            idle_states, [], now + dt.timedelta(minutes=10)
+        )
+
+        reserved_again = {key: _reserved(1000, 1)}
+        our3 = coordinator._detect_our_machines(
+            reserved_again, [], now + dt.timedelta(minutes=20)
+        )
+        await coordinator._check_reservations_for_booked(
+            reserved_again, our3, now + dt.timedelta(minutes=20)
+        )
+        assert coordinator.client.reservations.await_count == 2
+
+    @pytest.mark.asyncio
+    async def test_no_api_call_when_already_ours_via_transaction(self, coordinator):
+        now = dt.datetime(2026, 1, 1, 12, 0, 0)
+        key = (1000, 1)
+
+        tx = TransactionDTOFactory.build(laundry_number=1000, machine_number=1)
+        coordinator._detect_our_machines({key: _idle(1000, 1)}, [tx], now)
+
+        states = {key: _reserved(1000, 1)}
+        our = coordinator._detect_our_machines(
+            states, [], now + dt.timedelta(minutes=2)
+        )
+        assert key in our
+
+        coordinator.client.reservations = AsyncMock()
+        await coordinator._check_reservations_for_booked(
+            states, our, now + dt.timedelta(minutes=2)
+        )
+        coordinator.client.reservations.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_single_api_call_per_laundry_for_multiple_machines(self, coordinator):
+        now = dt.datetime(2026, 1, 1, 12, 0, 0)
+        key_a = (1000, 1)
+        key_b = (1000, 2)
+
+        coordinator._detect_our_machines(
+            {key_a: _idle(1000, 1), key_b: _idle(1000, 2)}, [], now
+        )
+        states = {key_a: _reserved(1000, 1), key_b: _reserved(1000, 2)}
+        our = coordinator._detect_our_machines(
+            states, [], now + dt.timedelta(minutes=1)
+        )
+
+        coordinator.client.reservations = AsyncMock(
+            return_value=ReservationsResponseDTOFactory.build(
+                size=1,
+                laundry_number=1000,
+                reservations=[
+                    ReservationDTOFactory.build(
+                        laundry_number=1000,
+                        machine_number=1,
+                        start=dt.datetime(2026, 1, 1, 11, 0, 0),
+                        end=dt.datetime(2026, 1, 1, 13, 0, 0),
+                    )
+                ],
+            )
+        )
+        result = await coordinator._check_reservations_for_booked(
+            states, our, now + dt.timedelta(minutes=1)
+        )
+        coordinator.client.reservations.assert_awaited_once_with(1000)
+        assert key_a in result
+        assert key_b not in result
+
+    @pytest.mark.asyncio
+    async def test_api_error_allows_retry_next_poll(self, coordinator):
+        now = dt.datetime(2026, 1, 1, 12, 0, 0)
+        key = (1000, 1)
+
+        coordinator._detect_our_machines({key: _idle(1000, 1)}, [], now)
+        states = {key: _reserved(1000, 1)}
+        our = coordinator._detect_our_machines(
+            states, [], now + dt.timedelta(minutes=1)
+        )
+
+        from mielelogic_api import MieleLogicConnectionError
+
+        coordinator.client.reservations = AsyncMock(
+            side_effect=MieleLogicConnectionError("timeout")
+        )
+        result = await coordinator._check_reservations_for_booked(
+            states, our, now + dt.timedelta(minutes=1)
+        )
+        assert key not in result
+        assert key not in coordinator._reservation_checked_keys
+
+        coordinator.client.reservations = AsyncMock(
+            return_value=ReservationsResponseDTOFactory.build(
+                size=1,
+                laundry_number=1000,
+                reservations=[
+                    ReservationDTOFactory.build(
+                        laundry_number=1000,
+                        machine_number=1,
+                        start=dt.datetime(2026, 1, 1, 11, 0, 0),
+                        end=dt.datetime(2026, 1, 1, 13, 0, 0),
+                    )
+                ],
+            )
+        )
+        our2 = coordinator._detect_our_machines(
+            states, [], now + dt.timedelta(minutes=2)
+        )
+        result = await coordinator._check_reservations_for_booked(
+            states, our2, now + dt.timedelta(minutes=2)
+        )
+        assert key in result
+
+    @pytest.mark.asyncio
+    async def test_no_api_call_when_no_booked_machines(self, coordinator):
+        now = dt.datetime(2026, 1, 1, 12, 0, 0)
+        key = (1000, 1)
+
+        states = {key: _idle(1000, 1)}
+        our: set[tuple[int, int]] = set()
+
+        coordinator.client.reservations = AsyncMock()
+        await coordinator._check_reservations_for_booked(states, our, now)
+        coordinator.client.reservations.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_no_api_call_for_busy_machines(self, coordinator):
+        now = dt.datetime(2026, 1, 1, 12, 0, 0)
+        key = (1000, 1)
+
+        coordinator._detect_our_machines({key: _idle(1000, 1)}, [], now)
+        states = {key: _busy(1000, 1)}
+        our = coordinator._detect_our_machines(
+            states, [], now + dt.timedelta(minutes=1)
+        )
+
+        coordinator.client.reservations = AsyncMock()
+        await coordinator._check_reservations_for_booked(
+            states, our, now + dt.timedelta(minutes=1)
+        )
+        coordinator.client.reservations.assert_not_awaited()

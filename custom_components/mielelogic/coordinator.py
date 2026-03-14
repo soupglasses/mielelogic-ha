@@ -83,6 +83,7 @@ class MieleLogicCoordinator(DataUpdateCoordinator[MieleLogicData]):
         self._recent_tx_for_machine: dict[tuple[int, int], dt.datetime] = {}
         self._seen_tx_keys: set[tuple] = set()
         self._our_machines: set[tuple[int, int]] = set()
+        self._reservation_checked_keys: set[tuple[int, int]] = set()
         self._poll_cooldown_until: float | None = None
 
     def _monotonic_time(self) -> float:
@@ -122,6 +123,7 @@ class MieleLogicCoordinator(DataUpdateCoordinator[MieleLogicData]):
                 self._our_machines.discard(key)
                 self._machine_busy_since.pop(key, None)
                 self._recent_tx_for_machine.pop(key, None)
+                self._reservation_checked_keys.discard(key)
 
         # Process new transactions: record time and check if machine is already active
         for tx in new_transactions:
@@ -135,6 +137,76 @@ class MieleLogicCoordinator(DataUpdateCoordinator[MieleLogicData]):
             k: v.machine_text_status for k, v in current_states.items()
         }
         return self._our_machines.copy()
+
+    async def _check_reservations_for_booked(
+        self,
+        current_states: dict[tuple[int, int], MachineStateDTO],
+        our_machines: set[tuple[int, int]],
+        now: dt.datetime,
+    ) -> set[tuple[int, int]]:
+        """Check the reservations endpoint for machines showing as 'booked'.
+
+        When a machine first enters the Reserved text-status without being
+        detected as "ours" via transactions, we hit the reservations endpoint
+        once to see whether the current user actually owns that timeslot.
+
+        The check fires at most once per Reserved appearance per machine.
+        Tracking is cleared when the machine leaves Reserved state so a later
+        reservation triggers a fresh lookup.
+        """
+        self._reservation_checked_keys = {
+            key
+            for key in self._reservation_checked_keys
+            if key in current_states
+            and current_states[key].machine_text_status == MachineTextStatus.Reserved
+        }
+
+        to_check: dict[int, list[tuple[int, int]]] = {}
+        for key, machine in current_states.items():
+            if (
+                machine.machine_text_status == MachineTextStatus.Reserved
+                and key not in our_machines
+                and key not in self._reservation_checked_keys
+            ):
+                to_check.setdefault(machine.laundry_number, []).append(key)
+
+        if not to_check:
+            return our_machines
+
+        for laundry_number, keys in to_check.items():
+            try:
+                reservations_resp = await self.client.reservations(laundry_number)
+            except MieleLogicAuthError:
+                raise
+            except MieleLogicError:
+                LOGGER.warning(
+                    "Failed to fetch reservations for laundry %s; "
+                    "will retry next update",
+                    laundry_number,
+                )
+                continue
+
+            for key in keys:
+                _, machine_number = key
+                for reservation in reservations_resp.reservations:
+                    if (
+                        reservation.machine_number == machine_number
+                        and reservation.start <= now <= reservation.end
+                    ):
+                        our_machines.add(key)
+                        self._our_machines.add(key)
+                        LOGGER.debug(
+                            "Machine %s in laundry %s matched our reservation "
+                            "(%s – %s); marking as ours",
+                            machine_number,
+                            laundry_number,
+                            reservation.start,
+                            reservation.end,
+                        )
+                        break
+                self._reservation_checked_keys.add(key)
+
+        return our_machines
 
     async def _async_update_data(self) -> MieleLogicData:
         """Fetch all data from MieleLogic API."""
@@ -186,6 +258,9 @@ class MieleLogicCoordinator(DataUpdateCoordinator[MieleLogicData]):
             new_txs = [tx for tx in tx_resp.transactions if _tx_key(tx) in new_tx_keys]
 
             our_machines = self._detect_our_machines(all_machine_states, new_txs, now)
+            our_machines = await self._check_reservations_for_booked(
+                all_machine_states, our_machines, now
+            )
 
             balance = 0.0
             currency = ""
